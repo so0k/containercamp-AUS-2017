@@ -1,0 +1,147 @@
+# Default values for cog.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+image:
+  pullPolicy: IfNotPresent
+
+## Configure Docker Registry login credentials for private repositories
+docker:
+    registryEmail:
+    registryUser:
+    registryPassword:
+
+##
+## COG
+##
+cog:
+  name: cog
+  serviceType: ClusterIP
+  replicaCount: 1
+  image:
+    repository: operable/cog
+    tag: "1.0"
+
+  resources:
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  # Adds an ingress in front of Nginx
+  ingress:
+    enabled: false
+
+    # annotations:
+    #   kubernetes.io/tls-acme: true
+    #   kubernetes.io/ingress.class: nginx
+    # tls:
+    # - hosts:
+    #   - cog.example.com
+    #   secretName: cog-tls
+
+  ## Chat provider toggle
+  ## Only one can be 'true' at a time
+  slackEnabled: true
+  hipchatEnabled: false
+
+  ## Config values snake-case for templating delimiter
+  ## https://cog-book.operable.io/references/cog_server_configuration.html
+  config:
+    ## Hipchat specific configuration
+    # cog-hipchat-api-token:
+    # cog-hipchat-jabber-id:
+    # cog-hipchat-nickname:
+    # cog-hipchat-rooms:
+    # cog-hipchat-user-api-token:
+    # cog-hipchat-user-jabber-ID:
+    # cog-hipchat-user-nickname:
+
+    ##
+    mix-env: prod
+
+    cog-allow-self-registration: 1
+    cog-mqtt-host: 0.0.0.0
+    cog-mqtt-port: 1883
+
+    cog-api-url-base: http://cog.spawnhub.com
+    ## Cog usually represents these endpoints as separate ports
+    ## Configuring the url-base allows them on the same domain
+    cog-service-url-base: http://cog.spawnhub.com/service
+    cog-trigger-url-base: http://cog.spawnhub.com/trigger
+
+    ## These variables are used to configure an initial admin account
+    # cog-bootstrap-chat-handle:
+    cog-bootstrap-username: admin
+    cog-bootstrap-email-address: cog@localhost
+    cog-bootstrap-first-name: Cog
+    cog-bootstrap-last-name: Administrator
+
+    ## send anonymized user data back to Operable
+    cog-telemetry: false
+
+  ## Secrets
+  secrets:
+    slackAPIToken:
+    databaseURL: 'ecto://cog:cog@postgresql:5432/cog'
+    cogBootstrapPassword:
+    cogHipchatJabberPassword:
+    cogHipchatUserJabberPassword:
+
+##
+## RELAY
+##
+relay:
+  name: relay
+  replicaCount: 1
+  image:
+    repository: operable/relay
+    tag: "1.0"
+
+  resources:
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  ## https://cog-book.operable.io/references/relay_configuration.html
+  config:
+    relay-id: 00000000-0000-0000-0000-000000000000
+    relay-managed-dynamic-config: true
+    relay-dynamic-config-root: /tmp/bundle_configs
+    relay-cog-refresh-interval: 30s
+    relay-docker-clean-interval: 1m
+    relay-log-level: info
+    docker-api-version: "1.23" # defaults
+
+    ## Docker version | API version
+    ## ---------------|------------
+    ## 1.12.x          1.24
+    ## 1.11.x          1.23
+    ## 1.10.x          1.22
+    ## 1.9.x           1.21
+    ## 1.8.x           1.20
+    ## 1.7.x           1.19
+    ## 1.6.x           1.18
+
+  ## Secrets don't like '-'
+  secrets:
+    relayCogToken:
+
+nginx:
+  name: nginx
+  replicaCount: 1
+  image:
+    repository: nginx
+    tag: 1.11
+  resources:
+    # limits:
+    #   cpu: 100m
+    #   memory: 128Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  serviceType: LoadBalancer
