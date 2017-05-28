@@ -107,7 +107,8 @@ export KOPS_STATE_STORE=s3://kubernetes-${DOMAIN}-com-state-store
 export AWS_REGION=ap-southeast-2
 export KEY_NAME=k8s-${CLUSTER}-${DOMAIN}
 
-aws s3api create-bucket --bucket kubernetes-${DOMAIN}-com-state-store --region ${AWS_REGION}
+# make bucket (with location constraint)
+aws s3 mb s3://kubernetes-${DOMAIN}-com-state-store --region ${AWS_REGION}
 aws s3api put-bucket-versioning --bucket kubernetes-${DOMAIN}-com-state-store  --versioning-configuration Status=Enabled
 
 
@@ -140,6 +141,11 @@ https://github.com/kubernetes/kops/blob/75718857b69756ac8374a1001363eadfa6f09a4f
 # Ideally use something like kube-lego to use https with cog...
 ```
 
+Install Helm's Tiller to cluster
+```
+helm init
+```
+
 ### Installing Cog
 
 Overview:
@@ -149,26 +155,28 @@ Overview:
   note: need to add a subnet to the k8s VPC to provision RDS (kops doesn't have multi subnets for the default cluster config)
 - Using the excelent cog helm chart from [ohaiwalt](https://github.com/ohaiwalt/cog-helm/)
 
-Once Postgres is provisioned, Follow [these instructions to set up postgres](https://gist.github.com/so0k/f4308160a9a2e749aa0b90715288e08b)
+for demo purposes (non production setup) - install `postgresql` using Helm:
+
+```
+helm install -n spwnhbdb \
+  --set postgresUser=cog,postgresPassword=mypassword,postgresDatabase=cogdb,persistence.enabled=false \
+  stable/postgresql
+```
+See: [postgresql chart](https://kubeapps.com/charts/stable/postgresql)
+
+Alternatively, provision postgres using AWS RDS, Follow [these instructions to set up postgres](https://gist.github.com/so0k/f4308160a9a2e749aa0b90715288e08b)
 
 (Ensure RDS security group allows ingress from the k8s cluster)
 ```
 $ kubectl exec -it alpine-shell --image=alpine:3.5 -- sh
-> apk update
-> apk add postgres-client
+> apk update && apk add postgresql-client
 > psql -U $RDS_USERNAME -h $RDS_HOSTNAME -p $RDS_PORT -d postgres
 postgres=> \l
 postgres=> CREATE DATABASE cog;
 postgres=> CREATE USER cog WITH PASSWORD 'mysupersecret';
 postgres=> GRANT ALL PRIVILEGES ON DATABASE cog TO cog;
 postgres=> \connect cog
-cog=> CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 cog=> \q
-```
-
-Install Tiller to cluster
-```
-helm init
 ```
 
 [Get slack token](https://my.slack.com/services/new/bot)
@@ -194,7 +202,7 @@ cog:
     cog-trigger-url-base: http://cog.spawnhub.com/trigger
 
   secrets:
-    databaseURL: ecto://cog:mysupersecret@spawnhub-db.clhwa0v5ueuv.ap-southeast-2.rds.amazonaws.com:5432/cogdb
+    databaseURL: ecto://cog:mysupersecret@spwnhbdb-postgresql:5432/cogdb
     slackAPIToken: xoxb-...
     cogBootstrapPassword: mybootstrappassword
 relay:
@@ -204,18 +212,21 @@ relay:
     relayCogToken: ...
 ```
 
-
 Once Tiller is ready:
 ```
-helm install --name ccamp -f .secrets.yaml pod
+helm install --name ccamp -f cog/.secrets.yaml cog
 ```
 
-You should see Cog connect to your slack channel... say hello to auto-create an account..
+You should see Cog connect to your slack channel... say `help` to auto-create an account:
 
+![creating account](pictures/hello-cog.png)
 
-Get a shell into the cog pod and add yourself to the admin group
+**NOTE**: Allowing self registration with Cog is enabled by default in the included cog chart.
+
+Get a shell into the cog pod and add the account name to the admin group
 ```
-kubectl exec -it ccamp-cog-2654845993-2h2b5 -- bash
+po=$(kubectl get po -l chart=cog-0.1.0 -o name)
+kubectl exec -it ${po#*/} -- bash
 cogctl group add cog-admin <your-slack-handle>
 ```
 
@@ -269,12 +280,12 @@ Create config, upload and apply to all bundles:
 echo 'AWS_ACCESS_KEY_ID: "AKI.."' >> config.yaml
 echo 'AWS_SECRET_ACCESS_KEY: "ncO..."' >> config.yaml
 echo 'AWS_REGION: "ap-southeast-2"' >> config.yaml
-kubectl cp ./config.yaml ccamp-cog-2654845993-2h2b5:/home/operable/
-kubectl exec -it ccamp-cog-2654845993-2h2b5 -- bash
+kubectl cp ./config.yaml ${po#*/}:/home/operable/
+kubectl exec -it ${po#*/} -- bash
 
 cogctl bundle config create ec2 ~/config.yaml
-cogctl bundle config create s3 ~/cog-config.yaml
-cogctl bundle config create r53 ~/cog-config.yaml
+cogctl bundle config create s3 ~/config.yaml
+cogctl bundle config create r53 ~/config.yaml
 ```
 
 Create k8s credentials
@@ -282,7 +293,7 @@ Create k8s credentials
 kubectl create sa cog
 c=`kubectl config current-context`
 secret=$(kubectl get sa cog -o json | jq -r .secrets[].name)
-KUBERNETES_SERVER=`kubectl config view -o jsonpath="{.clusters[?(@.name == \"$name\")].cluster.server}"`
+KUBERNETES_SERVER=`kubectl config view -o jsonpath="{.clusters[?(@.name == \"$c\")].cluster.server}"`
 KUBERNETES_TOKEN=$(kubectl get sa cog -o json | jq -r .secrets[0].name | xargs kubectl get secret -o json | jq -r .data.token | base64 -D)
 KUBERNETES_CERT=$(kubectl get sa cog -o json | jq -r .secrets[0].name | xargs kubectl get secret -o json | jq -r .data[\"ca.crt\"])
 
@@ -296,7 +307,7 @@ Install kubectl bundle
 ```
 @cog bundle install kubectl
 @cog bundle enable kubectl
-@cog bundle relay-group member assign default kubectl
+@cog relay-group member assign default kubectl
 
 @cog permission grant kubectl:read cog-admin
 @cog permission grant kubectl:write cog-admin
@@ -305,8 +316,8 @@ Install kubectl bundle
 
 Configure kubectl bundle
 ```
-kubectl cp ./k8s-staging-config.yaml ccamp-cog-2654845993-2h2b5:/home/operable/
-kubectl exec -it ccamp-cog-2654845993-2h2b5 -- bash
+kubectl cp ./k8s-staging-config.yaml ${po#*/}:/home/operable/
+kubectl exec -it ${po#*/} -- bash
 cogctl bundle config create kubectl ~/k8s-staging-config.yaml --layer=room/cluster-staging
 ```
 
