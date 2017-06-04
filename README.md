@@ -108,8 +108,8 @@ export AWS_REGION=ap-southeast-2
 export KEY_NAME=k8s-${CLUSTER}-${DOMAIN}
 
 # make bucket (with location constraint)
-aws s3 mb s3://kubernetes-${DOMAIN}-com-state-store --region ${AWS_REGION}
-aws s3api put-bucket-versioning --bucket kubernetes-${DOMAIN}-com-state-store  --versioning-configuration Status=Enabled
+aws s3 mb ${KOPS_STATE_STORE} --region ${AWS_REGION}
+aws s3api put-bucket-versioning --bucket ${KOPS_STATE_STORE##*/} --versioning-configuration Status=Enabled
 
 
 # aws ec2 describe-availability-zones --region ap-southeast-2
